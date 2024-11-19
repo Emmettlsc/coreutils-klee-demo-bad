@@ -1,0 +1,41 @@
+name: KLEE Analysis
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  klee-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build Docker Image
+      run: |
+        docker build \
+          --build-arg REPO_URL=${{ github.event.repository.clone_url }} \
+          --build-arg REPO_BRANCH=${{ github.ref_name }} \
+          -t klee-coreutils .
+
+    - name: Run KLEE Analysis
+      run: |
+        docker run --rm -v ${{ github.workspace }}:/workspace klee-coreutils /bin/bash -c "
+          # Run KLEE on echo.bc
+          klee --output-dir=/workspace/klee-out --libc=uclibc --posix-runtime /coreutils/obj-llvm/src/echo.bc --sym-arg 7
+
+          # Generate stats
+          klee-stats /workspace/klee-out > /workspace/klee-out/klee-stats.txt
+        "
+
+    - name: Upload KLEE Output
+      uses: actions/upload-artifact@v3
+      with:
+        name: klee-results
+        path: ./klee-out
